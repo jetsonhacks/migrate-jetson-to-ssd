@@ -13,12 +13,6 @@ usage() {
   exit 1
 }
 
-# Check for root privileges
-if [[ $EUID -ne 0 ]]; then
-  echo "This script must be run as root." >&2
-  exit 1
-fi
-
 # Parse command-line arguments
 DESTINATION="/dev/nvme0n1"
 while [[ $# -gt 0 ]]; do
@@ -36,6 +30,12 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Check for root privileges
+if [[ $EUID -ne 0 ]]; then
+  echo "This script must be run as root." >&2
+  exit 1
+fi
 
 # Define root partition
 ROOT_PART="${DESTINATION}p1"
