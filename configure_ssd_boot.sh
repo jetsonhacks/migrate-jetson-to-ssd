@@ -135,12 +135,24 @@ sed "/\\/boot\\/efi / s|UUID=[^ ]*|UUID=${EFI_UUID}|" "$FSTAB" > "${FSTAB}.tmp" 
 }
 
 echo "Updated $FSTAB with EFI UUID=${EFI_UUID}"
+ 
+# Disable legacy root-pivot services that conflict with direct NVMe boot.
+# These may have been cloned from the source media if the user previously
+# used the rootOnNVMe workflow or similar root-pivot method. If left enabled,
+# setssdroot.service will attempt to pivot root to a device that is already
+# the root filesystem, causing an RCU preempt stall and a hung boot.
+LEGACY_SERVICE="$MOUNT_POINT/etc/systemd/system/setssdroot.service"
+if [ -f "$LEGACY_SERVICE" ]; then
+  chroot "$MOUNT_POINT" /bin/bash -c "systemctl disable setssdroot.service" 2>/dev/null
+  echo "Disabled legacy setssdroot.service (not needed for direct NVMe boot)"
+fi
+ 
 sync
 # Unmount the root partition and clean up
 if mountpoint -q "$MOUNT_POINT"; then
   umount "$MOUNT_POINT"
 fi
 rmdir "$MOUNT_POINT"
-
+ 
 echo "System configurations updated on the SSD."
 echo "You may need to change the boot order to prioritize the SSD."
