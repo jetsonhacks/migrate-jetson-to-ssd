@@ -51,6 +51,21 @@ Run `configure_ssd_boot.sh` to modify the system configuration:
 sudo bash configure_ssd_boot.sh 
 ```
 
+### Step 4: Resize disk space if SSD > SD 
+```bash
+# 1. Check current partition layout
+sudo parted /dev/nvme0n1 print
+
+# 2. Resize partition 1 to use the entire disk
+sudo parted /dev/nvme0n1 resizepart 1 100%
+
+# 3. Resize the filesystem to fill the expanded partition
+sudo resize2fs /dev/nvme0n1p1
+
+# 4. Verify the new root filesystem size
+df -h /
+```
+
 ## Notes
 - Ensure the SSD has a larger capacity than the SD card.
 - Back up your data before running the scripts.
