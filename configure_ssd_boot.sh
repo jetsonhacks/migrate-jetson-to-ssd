@@ -37,9 +37,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Define root partition
-ROOT_PART="${DESTINATION}p1"
-
 # Get all partitions on the destination disk
 PARTITIONS=$(lsblk -nr -o NAME -x NAME "$DESTINATION" | sed "s|^|/dev/|")
 
@@ -52,6 +49,22 @@ for PART in $PARTITIONS; do
     break
   fi
 done
+
+ROOT_PART=""
+for PART in $PARTITIONS; do
+  if [[ "$(blkid -o value -s PARTLABEL "$PART" 2>/dev/null)" == "APP" ]] &&
+     [[ "$(blkid -o value -s TYPE "$PART" 2>/dev/null)" == "ext4" ]]; then
+    ROOT_PART="$PART"
+    break
+  fi
+done
+
+if [[ -z "$ROOT_PART" ]]; then
+  echo "Error: No root partition found on $DESTINATION." >&2
+  exit 1
+fi
+
+echo "Detected root partition: $ROOT_PART"
 
 if [[ -z "$EFI_PART" ]]; then
   echo "Error: No EFI (esp) partition found on $DESTINATION with PARTLABEL=esp and TYPE=vfat." >&2
@@ -90,7 +103,15 @@ EFI_UUID=$(blkid -o value -s UUID "$EFI_PART") || {
   exit 1
 }
 
+# Get UUID of the root partition
+ROOT_UUID=$(blkid -o value -s UUID "$ROOT_PART") || {
+  echo "Error: Failed to get UUID of $ROOT_PART." >&2
+  umount "$MOUNT_POINT"
+  exit 1
+}
+
 echo "EFI partition UUID: $EFI_UUID"
+echo "Root partition UUID: $ROOT_UUID"
 
 # Update extlinux.conf
 EXTLINUX_CONF="$MOUNT_POINT/boot/extlinux/extlinux.conf"
@@ -106,13 +127,14 @@ cp -p "$EXTLINUX_CONF" "${EXTLINUX_CONF}.bak" || {
   exit 1
 }
 
-sed "s|root=[^ ]*|root=${ROOT_PART}|" "$EXTLINUX_CONF" > "${EXTLINUX_CONF}.tmp" && mv "${EXTLINUX_CONF}.tmp" "$EXTLINUX_CONF" || {
+sed "s|root=[^ ]*|root=UUID=${ROOT_UUID}|" "$EXTLINUX_CONF" > "${EXTLINUX_CONF}.tmp" && mv "${EXTLINUX_CONF}.tmp" "$EXTLINUX_CONF" || {
   echo "Error: Failed to update $EXTLINUX_CONF." >&2
   umount "$MOUNT_POINT"
   exit 1
 }
 
-echo "Updated $EXTLINUX_CONF with root=${ROOT_PART}"
+echo "Updated $EXTLINUX_CONF with root=UUID=${ROOT_UUID}"
+diff "$EXTLINUX_CONF" "${EXTLINUX_CONF}.bak" || true
 
 # Update fstab
 FSTAB="$MOUNT_POINT/etc/fstab"
@@ -135,6 +157,8 @@ sed "/\\/boot\\/efi / s|UUID=[^ ]*|UUID=${EFI_UUID}|" "$FSTAB" > "${FSTAB}.tmp" 
 }
 
 echo "Updated $FSTAB with EFI UUID=${EFI_UUID}"
+diff "$FSTAB" "${FSTAB}.bak" || true
+
 sync
 # Unmount the root partition and clean up
 if mountpoint -q "$MOUNT_POINT"; then
